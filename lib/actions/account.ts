@@ -16,6 +16,7 @@ import { getTranslations } from 'next-intl/server';
 import { isLocale } from '@/i18n/config';
 import { setLocaleCookie } from '@/lib/i18n/locale';
 import { startLogin, submitCode, submitPassword } from '@/lib/services/telegram-login';
+import { clearAppKeys, saveAppKeys } from '@/lib/services/app-keys';
 
 type State = { error?: string; ok?: string } | undefined;
 
@@ -221,4 +222,23 @@ export async function telegramLoginPassword(token: string, password: string): Pr
     if (m === 'PASSWORD_HASH_INVALID') return { error: t('errors.passwordWrongTg') };
     return { error: m };
   }
+}
+
+const keyedPlatform = z.enum(['instagram', 'threads', 'linkedin', 'x']);
+
+/** OAuth app keys typed into the dashboard; shared by all projects. */
+export async function saveAppKeysAction(_prev: State, form: FormData): Promise<State> {
+  await requireUser();
+  const parsed = z
+    .object({ platform: keyedPlatform, clientId: z.string().trim().min(3).max(255), secret: z.string().trim().min(3) })
+    .safeParse(Object.fromEntries(form));
+  if (!parsed.success) return err('appKeysFields');
+  await saveAppKeys(parsed.data.platform, parsed.data.clientId, parsed.data.secret);
+  return done((await tr())('ok.keysSaved'));
+}
+
+export async function clearAppKeysAction(platform: string) {
+  await requireUser();
+  await clearAppKeys(keyedPlatform.parse(platform));
+  revalidatePath('/', 'layout');
 }

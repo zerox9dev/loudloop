@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { upsertConnectedAccount } from '@/lib/services/connect';
 import { projectById } from '@/lib/projects';
 import { callbackUrl, isOAuthPlatform, OAUTH } from '@/lib/providers/oauth';
+import { requireAppKeys } from '@/lib/services/app-keys';
 
 export async function GET(req: Request, { params }: { params: Promise<{ platform: string }> }) {
   const { platform } = await params;
@@ -21,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ platform
   const code = url.searchParams.get('code');
   if (!code) return back('error=no_code');
   try {
-    const res = await OAUTH[platform].exchange(code.replace(/#_$/, ''), callbackUrl(platform), saved.verifier);
+    const res = await OAUTH[platform].exchange(await requireAppKeys(platform), code.replace(/#_$/, ''), callbackUrl(platform), saved.verifier);
     await upsertConnectedAccount({ projectId: project.id, platform, handle: res.handle, externalId: res.externalId, credentials: res.credentials, expiresAt: res.expiresAt });
     return back(`connected=${platform}`);
   } catch (e) {

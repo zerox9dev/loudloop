@@ -21,7 +21,8 @@ import { PLATFORM_META } from '@/lib/platforms';
 import { decryptJson } from '@/lib/crypto';
 import { getFormat } from '@/lib/i18n/server';
 import { listProjects, resolveScope, scopeAccounts } from '@/lib/projects';
-import { callbackUrl, OAUTH, OAUTH_ENV } from '@/lib/providers/oauth';
+import { callbackUrl, OAUTH_ENV } from '@/lib/providers/oauth';
+import { appKeysOverview } from '@/lib/services/app-keys';
 import { telegramLoginReady } from '@/lib/services/telegram-login';
 import { logout } from '@/app/login/actions';
 
@@ -42,6 +43,7 @@ export default async function AccountPage({ params, searchParams }: PageProps<'/
   const hasDemo = list.some((a) => a.status === 'demo');
   const section = 'rounded-lg border bg-card p-6 space-y-4';
   const tgReady = telegramLoginReady();
+  const keys = await appKeysOverview(['instagram', 'threads', 'x', 'linkedin']);
   const hasSession = (credentials: string | null) => !!decryptJson<{ session?: string }>(credentials)?.session;
 
   return (
@@ -103,16 +105,16 @@ export default async function AccountPage({ params, searchParams }: PageProps<'/
               </h2>
               <div className="grid gap-4 md:grid-cols-2">
                 <TelegramCard projectId={pid} />
-                <OAuthCard platform="instagram" projectId={pid} ready={OAUTH.instagram.ready()} callbackUrl={callbackUrl('instagram')} envVars={OAUTH_ENV.instagram}>
+                <OAuthCard platform="instagram" projectId={pid} keys={keys.instagram} callbackUrl={callbackUrl('instagram')} envVars={OAUTH_ENV.instagram}>
                   <MetaTokenForm platform="instagram" projectId={pid} />
                 </OAuthCard>
-                <OAuthCard platform="threads" projectId={pid} ready={OAUTH.threads.ready()} callbackUrl={callbackUrl('threads')} envVars={OAUTH_ENV.threads}>
+                <OAuthCard platform="threads" projectId={pid} keys={keys.threads} callbackUrl={callbackUrl('threads')} envVars={OAUTH_ENV.threads}>
                   <MetaTokenForm platform="threads" projectId={pid} />
                 </OAuthCard>
-                <OAuthCard platform="x" projectId={pid} ready={OAUTH.x.ready()} callbackUrl={callbackUrl('x')} envVars={OAUTH_ENV.x}>
+                <OAuthCard platform="x" projectId={pid} keys={keys.x} callbackUrl={callbackUrl('x')} envVars={OAUTH_ENV.x}>
                   <XLegacyForm projectId={pid} />
                 </OAuthCard>
-                <OAuthCard platform="linkedin" projectId={pid} ready={OAUTH.linkedin.ready()} callbackUrl={callbackUrl('linkedin')} envVars={OAUTH_ENV.linkedin}>
+                <OAuthCard platform="linkedin" projectId={pid} keys={keys.linkedin} callbackUrl={callbackUrl('linkedin')} envVars={OAUTH_ENV.linkedin}>
                   <LinkedinTokenForm projectId={pid} />
                 </OAuthCard>
               </div>

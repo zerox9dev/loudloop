@@ -118,6 +118,17 @@ export const metricSnapshots = pgTable(
   (t) => [uniqueIndex('metric_snapshots_account_day').on(t.accountId, t.day)],
 );
 
+/**
+ * OAuth app keys entered in the dashboard, one row per platform and shared by every project.
+ * The secret is encrypted like account credentials; env vars are the fallback when there is no row.
+ */
+export const appKeys = pgTable('app_keys', {
+  platform: platformEnum('platform').primaryKey(),
+  clientId: varchar('client_id', { length: 255 }).notNull(),
+  secret: text('secret').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Daily profile views, for platforms that report them per day (Threads). */
 export const profileViews = pgTable(
   'profile_views',

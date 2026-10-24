@@ -508,12 +508,14 @@
       "phone": "Укажите номер в международном формате, например +380…",
       "codeExpired": "Время вышло — начните вход заново",
       "codeWrong": "Неверный код",
-      "passwordWrongTg": "Неверный пароль Telegram"
+      "passwordWrongTg": "Неверный пароль Telegram",
+      "appKeysFields": "Укажите ID и секрет приложения"
     },
     "ok": {
       "connected": "{platform} подключён",
       "saved": "Сохранено",
-      "tgSignedIn": "Аккаунт Telegram подключён — подтягиваю историю канала"
+      "tgSignedIn": "Аккаунт Telegram подключён — подтягиваю историю канала",
+      "keysSaved": "Ключи приложения сохранены"
     }
   },
   "connect": {
@@ -525,7 +527,6 @@
     "callback": "Redirect / Callback URL",
     "copy": "Скопировать",
     "copied": "Скопировано",
-    "envHint": "Пропишите в .env и перезапустите: {vars}",
     "httpsHint": "Meta, LinkedIn и X принимают только https-адреса: APP_URL должен быть публичным (Tailscale Funnel, cloudflared или домен).",
     "developer": "Для разработчиков: подключить по токену",
     "caps": {
@@ -539,22 +540,22 @@
       "instagram": [
         "developers.facebook.com → Create App → use case «Instagram API with Instagram Login»",
         "Instagram → API setup with Instagram login → Business login settings: добавьте Redirect URL ниже",
-        "Скопируйте Instagram App ID и Secret в INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET"
+        "Скопируйте Instagram App ID и Secret в поля ниже"
       ],
       "threads": [
         "developers.facebook.com → Create App → use case «Access the Threads API»",
         "Use cases → Threads → Settings: добавьте Redirect Callback URL ниже",
-        "Скопируйте Threads App ID и Secret в THREADS_APP_ID / THREADS_APP_SECRET"
+        "Скопируйте Threads App ID и Secret в поля ниже"
       ],
       "linkedin": [
         "developer.linkedin.com → Create app (нужна страница компании — подойдёт любая своя)",
         "Products: добавьте «Sign In with LinkedIn using OpenID Connect» и «Share on LinkedIn»",
-        "Auth: добавьте Redirect URL ниже, скопируйте Client ID и Secret в LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET"
+        "Auth: добавьте Redirect URL ниже, скопируйте Client ID и Secret в поля ниже"
       ],
       "x": [
         "developer.x.com → Projects & Apps → ваше приложение → User authentication settings",
         "OAuth 2.0, Type of App: Web App; Callback URI — адрес ниже; Website URL — любой ваш",
-        "Keys and tokens → OAuth 2.0 Client ID и Secret в X_CLIENT_ID / X_CLIENT_SECRET"
+        "Keys and tokens → OAuth 2.0 Client ID и Secret скопируйте в поля ниже"
       ]
     },
     "telegram": {
@@ -580,6 +581,15 @@
       "xLegacy": "OAuth 1.0a ключи пользователя (нужны X_API_KEY / X_API_SECRET в .env)",
       "xToken": "Access Token",
       "xSecret": "Access Token Secret"
+    },
+    "keys": {
+      "clientId": "ID приложения {platform}",
+      "secret": "Секрет приложения",
+      "save": "Сохранить ключи",
+      "clear": "Удалить",
+      "fromDb": "Ключи сохранены здесь (секрет ••••{tail}). Чтобы заменить, заполните оба поля.",
+      "fromEnv": "Ключи берутся из окружения сервера. Сохранённые здесь их заменят.",
+      "none": "Вставьте ключи из кабинета разработчика или задайте {vars} в окружении сервера."
     }
   },
   "accountPage": {

@@ -16,6 +16,7 @@ import { PLATFORM_META } from '@/lib/platforms';
 import type { Platform } from '@/lib/db/schema';
 import { deleteProject, moveAccount, renameProject } from '@/lib/actions/projects';
 import {
+  clearAppKeysAction,
   connectLinkedinToken,
   connectMetaToken,
   connectTelegram,
@@ -24,6 +25,7 @@ import {
   disconnectAccount,
   importHistory,
   removeDemoAccounts,
+  saveAppKeysAction,
   telegramLoginCode,
   telegramLoginPassword,
   telegramLoginStart,
@@ -78,6 +80,8 @@ function CopyField({ value }: { value: string }) {
   );
 }
 
+type KeysInfo = { clientId: string; secretTail: string; source: 'db' | 'env' } | null;
+
 /**
  * One card per platform: the official way first (OAuth button, or the Telegram bot),
  * setup steps when the app keys are missing, manual tokens tucked away for developers.
@@ -85,19 +89,20 @@ function CopyField({ value }: { value: string }) {
 export function OAuthCard({
   platform,
   projectId,
-  ready,
+  keys,
   callbackUrl,
   envVars,
   children,
 }: {
   platform: Exclude<Platform, 'telegram'>;
   projectId: number;
-  ready: boolean;
+  keys: KeysInfo;
   callbackUrl: string;
   envVars: string[];
   children?: React.ReactNode;
 }) {
   const t = useTranslations('connect');
+  const ready = keys !== null;
   const label = PLATFORM_META[platform].label;
   const steps = t.raw(`steps.${platform}`) as string[];
   return (
@@ -130,9 +135,9 @@ export function OAuthCard({
         <div className="mt-3 space-y-1.5">
           <p className="text-xs text-muted-foreground">{t('callback')}</p>
           <CopyField value={callbackUrl} />
-          <p className="text-xs text-muted-foreground">{t('envHint', { vars: envVars.join(', ') })}</p>
           <p className="text-xs text-muted-foreground">{t('httpsHint')}</p>
         </div>
+        <AppKeysForm platform={platform} keys={keys} envVars={envVars} />
       </details>
       {children && (
         <details className="text-sm">
@@ -141,6 +146,49 @@ export function OAuthCard({
         </details>
       )}
     </div>
+  );
+}
+
+/** App ID + secret, saved encrypted; overrides the env vars of the same platform. */
+function AppKeysForm({ platform, keys, envVars }: { platform: Exclude<Platform, 'telegram'>; keys: KeysInfo; envVars: string[] }) {
+  const t = useTranslations('connect.keys');
+  const [state, action, pending] = useActionState(saveAppKeysAction as Act, undefined);
+  const [clearing, startClear] = useTransition();
+  const label = PLATFORM_META[platform].label;
+  return (
+    <form action={action} className="mt-4 space-y-3 border-t pt-4">
+      <input type="hidden" name="platform" value={platform} />
+      <p className="text-xs text-muted-foreground">
+        {keys?.source === 'db' ? t('fromDb', { tail: keys.secretTail }) : keys?.source === 'env' ? t('fromEnv') : t('none', { vars: envVars.join(', ') })}
+      </p>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${platform}-client-id`}>{t('clientId', { platform: label })}</Label>
+        <Input id={`${platform}-client-id`} name="clientId" defaultValue={keys?.clientId ?? ''} autoComplete="off" required />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${platform}-secret`}>{t('secret')}</Label>
+        <Input
+          id={`${platform}-secret`}
+          name="secret"
+          type="password"
+          placeholder={keys?.secretTail ? `••••${keys.secretTail}` : ''}
+          autoComplete="new-password"
+          required
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending && <Loader2 className="size-4 animate-spin" />} {t('save')}
+        </Button>
+        {keys?.source === 'db' && (
+          <Button type="button" size="sm" variant="ghost" disabled={clearing} onClick={() => startClear(() => clearAppKeysAction(platform))}>
+            {t('clear')}
+          </Button>
+        )}
+        {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
+        {state?.ok && <p className="text-sm text-emerald-600">{state.ok}</p>}
+      </div>
+    </form>
   );
 }
 

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import type { AppKeys } from '@/lib/services/app-keys';
 import type { ProviderAdapter } from './types';
 import { ProviderError } from './types';
 import { graphFetch, qs } from './http';
@@ -92,24 +93,23 @@ export const linkedinAdapter: ProviderAdapter<LinkedinCredentials> = {
 };
 
 export const linkedinOAuth = {
-  ready: () => !!process.env.LINKEDIN_CLIENT_ID,
-  authorize(redirectUri: string, state: string) {
+  authorize(keys: AppKeys, redirectUri: string, state: string) {
     return { url: `https://www.linkedin.com/oauth/v2/authorization?${qs({
       response_type: 'code',
-      client_id: process.env.LINKEDIN_CLIENT_ID,
+      client_id: keys.clientId,
       redirect_uri: redirectUri,
       state,
       scope: 'openid profile w_member_social',
     })}` };
   },
-  async exchange(code: string, redirectUri: string, _verifier?: string) {
+  async exchange(keys: AppKeys, code: string, redirectUri: string, _verifier?: string) {
     const token = await graphFetch<{ access_token: string; expires_in: number }>('https://www.linkedin.com/oauth/v2/accessToken', {
       form: {
         grant_type: 'authorization_code',
         code,
         redirect_uri: redirectUri,
-        client_id: process.env.LINKEDIN_CLIENT_ID!,
-        client_secret: process.env.LINKEDIN_CLIENT_SECRET!,
+        client_id: keys.clientId,
+        client_secret: keys.secret,
       },
     });
     const me = await linkedinMe(token.access_token);

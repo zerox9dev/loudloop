@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { TwitterApi, ApiResponseError } from 'twitter-api-v2';
 import type { ProviderAdapter, ProviderContext, PostMetrics, RemoteComment, RemotePost } from './types';
 import { ProviderError } from './types';
+import { getAppKeys, type AppKeys } from '@/lib/services/app-keys';
 
 /**
  * X (Twitter) via twitter-api-v2.
@@ -17,11 +18,8 @@ const isOAuth2 = (c: XCredentials): c is XOAuth2 => 'refreshToken' in c;
 
 export const X_SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'offline.access', 'media.write'];
 
-function appClient() {
-  const clientId = process.env.X_CLIENT_ID;
-  const clientSecret = process.env.X_CLIENT_SECRET;
-  if (!clientId) throw new ProviderError('X_CLIENT_ID is not set', false);
-  return new TwitterApi({ clientId, clientSecret });
+function appClient(keys: AppKeys) {
+  return new TwitterApi({ clientId: keys.clientId, clientSecret: keys.secret || undefined });
 }
 
 function client(ctx: ProviderContext<XCredentials>) {
@@ -162,7 +160,9 @@ export const xAdapter: ProviderAdapter<XCredentials> = {
   async refresh(ctx) {
     const c = ctx.credentials;
     if (!isOAuth2(c) || c.expiresAt - Date.now() > 5 * 60_000) return;
-    const res = await appClient().refreshOAuth2Token(c.refreshToken).catch(wrap);
+    const keys = await getAppKeys('x');
+    if (!keys) throw new ProviderError('X app keys are not set', false);
+    const res = await appClient(keys).refreshOAuth2Token(c.refreshToken).catch(wrap);
     const next = { ...c, accessToken: res.accessToken, refreshToken: res.refreshToken ?? c.refreshToken, expiresAt: Date.now() + res.expiresIn * 1000 };
     // the old refresh token is spent now: losing the new one means a manual reconnect, so retry the write
     for (let attempt = 1; ; attempt++) {
@@ -178,14 +178,13 @@ export const xAdapter: ProviderAdapter<XCredentials> = {
 };
 
 export const xOAuth = {
-  ready: () => !!process.env.X_CLIENT_ID,
-  authorize(redirectUri: string, state: string) {
-    const link = appClient().generateOAuth2AuthLink(redirectUri, { scope: X_SCOPES, state });
+  authorize(keys: AppKeys, redirectUri: string, state: string) {
+    const link = appClient(keys).generateOAuth2AuthLink(redirectUri, { scope: X_SCOPES, state });
     return { url: link.url, verifier: link.codeVerifier };
   },
-  async exchange(code: string, redirectUri: string, verifier?: string) {
+  async exchange(keys: AppKeys, code: string, redirectUri: string, verifier?: string) {
     if (!verifier) throw new Error('missing PKCE verifier');
-    const res = await appClient().loginWithOAuth2({ code, codeVerifier: verifier, redirectUri }).catch(wrap);
+    const res = await appClient(keys).loginWithOAuth2({ code, codeVerifier: verifier, redirectUri }).catch(wrap);
     // without offline.access there is no refresh token and the account would die in 2 hours
     if (!res.refreshToken) throw new Error('X returned no refresh token — enable offline.access for the app');
     const { data } = await res.client.v2.me().catch(wrap);

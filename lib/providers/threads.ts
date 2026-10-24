@@ -3,6 +3,7 @@ import type { PostKind } from '@/lib/db/schema';
 import { ProviderError } from './types';
 import { graphFetch, perItem, qs, sleep } from './http';
 import { subDays } from 'date-fns';
+import type { AppKeys } from '@/lib/services/app-keys';
 
 /**
  * Threads API. Docs: https://developers.facebook.com/docs/threads
@@ -188,28 +189,27 @@ export const threadsAdapter: ProviderAdapter<ThreadsCredentials> = {
 };
 
 export const threadsOAuth = {
-  ready: () => !!process.env.THREADS_APP_ID,
-  authorize(redirectUri: string, state: string) {
+  authorize(keys: AppKeys, redirectUri: string, state: string) {
     return { url: `https://threads.net/oauth/authorize?${qs({
-      client_id: process.env.THREADS_APP_ID,
+      client_id: keys.clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       state,
       scope: 'threads_basic,threads_content_publish,threads_manage_insights,threads_manage_replies,threads_read_replies',
     })}` };
   },
-  async exchange(code: string, redirectUri: string, _verifier?: string) {
+  async exchange(keys: AppKeys, code: string, redirectUri: string, _verifier?: string) {
     const short = await graphFetch<{ access_token: string; user_id: number | string }>('https://graph.threads.net/oauth/access_token', {
       form: {
-        client_id: process.env.THREADS_APP_ID!,
-        client_secret: process.env.THREADS_APP_SECRET!,
+        client_id: keys.clientId,
+        client_secret: keys.secret,
         grant_type: 'authorization_code',
         redirect_uri: redirectUri,
         code,
       },
     });
     const long = await graphFetch<{ access_token: string; expires_in: number }>(
-      `https://graph.threads.net/access_token?${qs({ grant_type: 'th_exchange_token', client_secret: process.env.THREADS_APP_SECRET, access_token: short.access_token })}`,
+      `https://graph.threads.net/access_token?${qs({ grant_type: 'th_exchange_token', client_secret: keys.secret, access_token: short.access_token })}`,
     );
     const me = await graphFetch<{ id: string; username: string }>(
       `${GRAPH}/me?${qs({ fields: 'id,username', access_token: long.access_token })}`,

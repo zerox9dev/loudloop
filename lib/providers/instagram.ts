@@ -1,4 +1,5 @@
 import type { ProviderAdapter, PostMetrics, RemoteComment, RemotePost } from './types';
+import type { AppKeys } from '@/lib/services/app-keys';
 import type { PostKind } from '@/lib/db/schema';
 import { format, subDays } from 'date-fns';
 import { ProviderError } from './types';
@@ -182,28 +183,27 @@ export const instagramAdapter: ProviderAdapter<InstagramCredentials> = {
 };
 
 export const instagramOAuth = {
-  ready: () => !!process.env.INSTAGRAM_APP_ID,
-  authorize(redirectUri: string, state: string) {
+  authorize(keys: AppKeys, redirectUri: string, state: string) {
     return { url: `https://www.instagram.com/oauth/authorize?${qs({
-      client_id: process.env.INSTAGRAM_APP_ID,
+      client_id: keys.clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       state,
       scope: 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_insights',
     })}` };
   },
-  async exchange(code: string, redirectUri: string, _verifier?: string) {
+  async exchange(keys: AppKeys, code: string, redirectUri: string, _verifier?: string) {
     const short = await graphFetch<{ access_token: string; user_id: number | string }>('https://api.instagram.com/oauth/access_token', {
       form: {
-        client_id: process.env.INSTAGRAM_APP_ID!,
-        client_secret: process.env.INSTAGRAM_APP_SECRET!,
+        client_id: keys.clientId,
+        client_secret: keys.secret,
         grant_type: 'authorization_code',
         redirect_uri: redirectUri,
         code,
       },
     });
     const long = await graphFetch<{ access_token: string; expires_in: number }>(
-      `https://graph.instagram.com/access_token?${qs({ grant_type: 'ig_exchange_token', client_secret: process.env.INSTAGRAM_APP_SECRET, access_token: short.access_token })}`,
+      `https://graph.instagram.com/access_token?${qs({ grant_type: 'ig_exchange_token', client_secret: keys.secret, access_token: short.access_token })}`,
     );
     const me = await graphFetch<{ user_id?: string; id: string; username: string }>(
       `${GRAPH}/me?${qs({ fields: 'user_id,username', access_token: long.access_token })}`,
