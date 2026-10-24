@@ -3,9 +3,9 @@ import { getFormat } from '@/lib/i18n/server';
 import { and, gte, lte } from 'drizzle-orm';
 import type { ChartSeries } from './followers-chart';
 import { db, challenges, type Platform } from '@/lib/db';
-import { followerSeries, publishingStreak, seriesByPlatform, summarizeAccount } from '@/lib/services/analytics';
+import { followerSeries, historyDays, publishingStreak, seriesByPlatform, summarizeAccount } from '@/lib/services/analytics';
 import { inScope, listProjects, scopeAccounts, type Scope } from '@/lib/projects';
-import { isPlatform, RANGES } from '@/lib/platforms';
+import { ALL_TIME, isPlatform, RANGES } from '@/lib/platforms';
 import { dayKey } from '@/lib/dates';
 import { isActive } from '@/lib/providers';
 import { GoalCard } from './goal-card';
@@ -15,7 +15,7 @@ import { GoalsDialog } from './goals-dialog';
 
 export function parseOverviewParams(sp: Record<string, string | string[] | undefined>) {
   const raw = typeof sp.p === 'string' ? sp.p.split(',').filter(isPlatform) : [];
-  const r = Number(sp.range);
+  const r = sp.range === undefined ? NaN : Number(sp.range);
   return { selected: raw.length ? (raw as Platform[]) : null, range: (RANGES as readonly number[]).includes(r) ? r : 30 };
 }
 
@@ -30,15 +30,16 @@ export async function OverviewBody({ scope, selected, range, readOnly = false }:
     .from(challenges)
     .where(and(lte(challenges.startsOn, today), gte(challenges.endsOn, today), inScope(challenges.projectId, scope)));
   const challenged = new Set(activeChallenges.map((c) => c.accountId));
+  const days = range === ALL_TIME ? await historyDays(visible.map((a) => a.id), now) : range;
 
   const [summaries, series] = await Promise.all([
     Promise.all(
       visible.map(async (a) => ({
-        s: await summarizeAccount(a, range, now),
+        s: await summarizeAccount(a, days, now),
         streak: challenged.has(a.id) || challenged.has(null) ? await publishingStreak(a.id, now) : 0,
       })),
     ),
-    followerSeries(visible.map((a) => a.id), range, now),
+    followerSeries(visible.map((a) => a.id), days, now),
   ]);
   const [t, f] = await Promise.all([getTranslations('overview'), getFormat()]);
   const monthLabel = f.date(now, 'LLLL');
@@ -70,7 +71,7 @@ export async function OverviewBody({ scope, selected, range, readOnly = false }:
         )}
       </section>
       <FollowersChart
-        range={range}
+        range={days}
         days={series.days}
         series={chartSeries}
       />

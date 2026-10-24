@@ -67,6 +67,8 @@
     "all": "All",
     "period": "Period",
     "days": "{n, plural, one {# day} other {# days}}",
+    "year": "Year",
+    "allTime": "All time",
     "syncStarted": "Sync started",
     "syncHint": "Data will refresh in about a minute",
     "refresh": "Refresh all",

@@ -92,6 +92,19 @@ async function firstFollowersFrom(accountId: number, day: string) {
   return row?.followers ?? null;
 }
 
+/** Days back to the oldest post or follower snapshot of these accounts, for the all-time range. */
+export async function historyDays(accountIds: number[], now = new Date()) {
+  if (accountIds.length === 0) return 30;
+  const [[post], [snap]] = await Promise.all([
+    db.select({ first: sql<Date | null>`min(${postTargets.publishedAt})` }).from(postTargets).where(and(inArray(postTargets.accountId, accountIds), eq(postTargets.status, 'published'))),
+    db.select({ first: sql<string | null>`min(${metricSnapshots.day})` }).from(metricSnapshots).where(inArray(metricSnapshots.accountId, accountIds)),
+  ]);
+  const firsts = [post?.first ? new Date(post.first) : null, snap?.first ? new Date(snap.first) : null].filter((d): d is Date => d !== null);
+  if (firsts.length === 0) return 30;
+  const oldest = Math.min(...firsts.map((d) => d.getTime()));
+  return Math.max(Math.ceil((now.getTime() - oldest) / 86400_000), 7);
+}
+
 export type SeriesPoint = { day: string } & Record<string, number | string>;
 
 /** Followers per day per platform, forward-filled, for the overview chart. */

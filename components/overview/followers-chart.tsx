@@ -91,7 +91,7 @@ export function FollowersChart({ days, series, range }: { days: string[]; series
               axisLine={false}
               tickMargin={10}
               minTickGap={28}
-              tickFormatter={(d: string) => f.date(parseISO(d), 'd MMM')}
+              tickFormatter={(d: string) => f.date(parseISO(d), range > 180 ? 'MMM yy' : 'd MMM')}
             />
             <YAxis tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => fmt(v)} />
             <ChartTooltip

@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { and, count, eq } from 'drizzle-orm';
 import { db, sql, accounts, comments, posts, postTargets, projects } from '@/lib/db';
 import { encryptJson } from '@/lib/crypto';
-import { backfillAccount, importPosts } from '@/lib/services/importer';
+import { BACKFILL, backfillAccount, importPosts } from '@/lib/services/importer';
 import { instagramAdapter } from '@/lib/providers/instagram';
 import type { Account } from '@/lib/db/schema';
 
@@ -85,19 +85,27 @@ describe.skipIf(!dbUp)('importPosts (integration)', () => {
       http.get('https://graph.threads.net/v1.0/:id/replies', ({ params }) =>
         HttpResponse.json({ data: params.id === 't2' ? [{ id: 'c1', text: 'класс', username: 'ann', timestamp: day(3) }] : [] }),
       ),
+      http.get('https://graph.threads.net/v1.0/:id/insights', ({ params }) =>
+        HttpResponse.json({ data: [{ name: 'views', total_value: { value: params.id === 't2' ? 70 : 10 } }, { name: 'likes', total_value: { value: 4 } }] }),
+      ),
     );
 
     const first = await importPosts(account, { days: 30, limit: 100, withComments: true });
     expect(first).toMatchObject({ created: 2, updated: 0, comments: 1 });
 
     const rows = await db
-      .select({ text: posts.text, kind: posts.kind, imported: posts.imported, projectId: posts.projectId, url: postTargets.url })
+      .select({ text: posts.text, kind: posts.kind, imported: posts.imported, projectId: posts.projectId, url: postTargets.url, views: postTargets.views, reactions: postTargets.reactions })
       .from(postTargets)
       .innerJoin(posts, eq(posts.id, postTargets.postId))
       .where(eq(postTargets.accountId, account.id));
     expect(rows.map((r) => [r.text, r.kind, r.imported, r.projectId === project.id]).sort()).toEqual([
       ['с фото', 'photo', true, true],
       ['свежий', 'post', true, true],
+    ]);
+    // Threads listings carry no counters: they are fetched once at import
+    expect(rows.map((r) => [r.text, r.views, r.reactions]).sort()).toEqual([
+      ['с фото', 70, 4],
+      ['свежий', 10, 4],
     ]);
 
     const second = await importPosts(account, { days: 30, limit: 100, withComments: true });
@@ -127,5 +135,17 @@ describe.skipIf(!dbUp)('importPosts (integration)', () => {
     );
     const res = await importPosts(account, { days: 30, limit: 100, withComments: true });
     expect(res).toMatchObject({ created: 0, comments: 1 });
+  });
+
+  it('a full backfill has no date cutoff and refreshes counters of known posts', async () => {
+    server.use(
+      http.get('https://graph.threads.net/v1.0/42/threads', () => HttpResponse.json(threadsPage)),
+      http.get('https://graph.threads.net/v1.0/:id/insights', () => HttpResponse.json({ data: [{ name: 'views', total_value: { value: 500 } }] })),
+    );
+    const res = await importPosts(account, { ...BACKFILL, withComments: false });
+    // only the 400-day-old post is new
+    expect(res).toMatchObject({ created: 1, updated: 2 });
+    const views = await db.select({ views: postTargets.views }).from(postTargets).where(eq(postTargets.accountId, account.id));
+    expect(views.map((v) => v.views)).toEqual([500, 500, 500]);
   });
 });

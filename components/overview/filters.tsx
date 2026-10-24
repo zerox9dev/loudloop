@@ -12,7 +12,7 @@ import { PLATFORM_META } from '@/lib/platforms';
 import type { Platform } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
 import { createShareLink, refreshAll } from '@/lib/actions/overview';
-import { RANGES } from '@/lib/platforms';
+import { ALL_TIME, RANGES } from '@/lib/platforms';
 
 
 
@@ -81,7 +81,7 @@ export function OverviewFilters({
         <SelectContent>
           {RANGES.map((r) => (
             <SelectItem key={r} value={String(r)}>
-              {t('days', { n: r })}
+              {r === ALL_TIME ? t('allTime') : r === 365 ? t('year') : t('days', { n: r })}
             </SelectItem>
           ))}
         </SelectContent>

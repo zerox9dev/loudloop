@@ -19,4 +19,6 @@ export function isPlatform(v: string): v is Platform {
   return (PLATFORMS as string[]).includes(v);
 }
 
-export const RANGES = [7, 30, 90] as const;
+/** Overview periods in days; 0 means all time (back to the oldest post or follower snapshot). */
+export const RANGES = [7, 30, 90, 365, 0] as const;
+export const ALL_TIME = 0;

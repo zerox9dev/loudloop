@@ -2,10 +2,10 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { subDays } from 'date-fns';
 import { db, accounts, comments, metricSnapshots, posts, postTargets, type Account } from '@/lib/db';
 import { getAdapter, isActive, prepareContext } from '@/lib/providers';
-import type { RemotePost } from '@/lib/providers/types';
+import type { PostMetrics, RemotePost } from '@/lib/providers/types';
 
-/** First connect pulls up to a year back; hourly syncs only look at the last few days. */
-export const BACKFILL = { days: 365, limit: 500 };
+/** First connect pulls everything the platform still lists; hourly syncs only look at the last few days. */
+export const BACKFILL = { days: null, limit: 1000 };
 export const RECENT = { days: 3, limit: 50 };
 
 export type ImportResult = { created: number; updated: number; comments: number; followerDays: number; skipped?: string };
@@ -15,14 +15,14 @@ export type ImportResult = { created: number; updated: number; comments: number;
  * the account was connected). Idempotent: (account, external id) is unique, existing rows only
  * get fresher metrics.
  */
-export async function importPosts(account: Account, opts: { days: number; limit: number; withComments: boolean }): Promise<ImportResult> {
+export async function importPosts(account: Account, opts: { days: number | null; limit: number; withComments: boolean }): Promise<ImportResult> {
   const result: ImportResult = { created: 0, updated: 0, comments: 0, followerDays: 0 };
   if (!isActive(account)) return { ...result, skipped: 'inactive' };
   const adapter = getAdapter(account);
   const ctx = await prepareContext(account);
   if (!adapter.fetchPosts) return { ...result, skipped: 'platform does not list posts' };
 
-  const remote = await adapter.fetchPosts(ctx, { since: subDays(new Date(), opts.days), limit: opts.limit });
+  const remote = await adapter.fetchPosts(ctx, { since: opts.days === null ? undefined : subDays(new Date(), opts.days), limit: opts.limit });
   if (remote.length === 0) return result;
 
   const known = await db
@@ -30,6 +30,14 @@ export async function importPosts(account: Account, opts: { days: number; limit:
     .from(postTargets)
     .where(and(eq(postTargets.accountId, account.id), inArray(postTargets.externalId, remote.map((r) => r.externalId))));
   const knownIds = new Map(known.map((k) => [k.externalId!, k.id]));
+
+  // some listings (Threads, LinkedIn) carry no counters, and regular syncs only refresh the last
+  // 30 days, so older posts would stay at zero forever: ask for new ones, and for all on a full backfill
+  const bare = remote.filter((r) => !r.metrics && (opts.days === null || !knownIds.has(r.externalId))).map((r) => r.externalId);
+  if (bare.length) {
+    const fetched = await adapter.fetchPostMetrics(ctx, bare).catch(() => ({}) as Record<string, PostMetrics>);
+    for (const r of remote) r.metrics ??= fetched[r.externalId];
+  }
 
   const fresh: RemotePost[] = [];
   for (const r of remote) {
