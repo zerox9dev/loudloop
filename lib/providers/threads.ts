@@ -2,6 +2,7 @@ import type { ProviderAdapter, PostMetrics, RemoteComment, RemotePost } from './
 import type { PostKind } from '@/lib/db/schema';
 import { ProviderError } from './types';
 import { graphFetch, perItem, qs, sleep } from './http';
+import { subDays } from 'date-fns';
 
 /**
  * Threads API. Docs: https://developers.facebook.com/docs/threads
@@ -148,6 +149,30 @@ export const threadsAdapter: ProviderAdapter<ThreadsCredentials> = {
       url = page.paging?.next;
     }
     return out;
+  },
+
+  async fetchViewHistory(ctx, since) {
+    // the API refuses anything older than two years and is asked in 90-day windows
+    const end = new Date();
+    const floor = subDays(end, 729);
+    let from = since && since > floor ? since : floor;
+    const out: { day: string; views: number }[] = [];
+    while (from < end) {
+      const to = new Date(Math.min(from.getTime() + 90 * 86400_000, end.getTime()));
+      const res = await graphFetch<{ data: { values?: { value: number; end_time: string }[] }[] }>(
+        `${GRAPH}/${ctx.credentials.userId}/threads_insights?${qs({
+          metric: 'views',
+          since: Math.floor(from.getTime() / 1000),
+          until: Math.floor(to.getTime() / 1000),
+          access_token: ctx.credentials.accessToken,
+        })}`,
+      );
+      // end_time closes the day (midnight Pacific), so the value belongs to the day before
+      for (const v of res.data[0]?.values ?? []) out.push({ day: new Date(Date.parse(v.end_time.slice(0, 10)) - 86400_000).toISOString().slice(0, 10), views: v.value });
+      from = to;
+    }
+    // windows share their edge day: keep the later reading
+    return [...new Map(out.map((r) => [r.day, r])).values()].sort((a, b) => a.day.localeCompare(b.day));
   },
 
   async refresh(ctx) {

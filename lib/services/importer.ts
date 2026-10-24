@@ -1,6 +1,6 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { subDays } from 'date-fns';
-import { db, accounts, comments, metricSnapshots, posts, postTargets, type Account } from '@/lib/db';
+import { db, accounts, comments, metricSnapshots, posts, postTargets, profileViews, type Account } from '@/lib/db';
 import { getAdapter, isActive, prepareContext } from '@/lib/providers';
 import type { PostMetrics, RemotePost } from '@/lib/providers/types';
 
@@ -8,7 +8,7 @@ import type { PostMetrics, RemotePost } from '@/lib/providers/types';
 export const BACKFILL = { days: null, limit: 1000 };
 export const RECENT = { days: 3, limit: 50 };
 
-export type ImportResult = { created: number; updated: number; comments: number; followerDays: number; skipped?: string };
+export type ImportResult = { created: number; updated: number; comments: number; followerDays: number; viewDays?: number; skipped?: string };
 
 /**
  * Bring posts that already exist on the platform into the app (published natively or before
@@ -124,11 +124,24 @@ export async function importFollowerHistory(account: Account, days = 30) {
   return rows.length;
 }
 
+/** Upsert daily profile views from `since` (null: all the platform keeps); the latest day is still growing. */
+export async function importViewHistory(account: Account, since: Date | null) {
+  const adapter = getAdapter(account);
+  if (!adapter.fetchViewHistory || !isActive(account)) return 0;
+  const rows = await adapter.fetchViewHistory(await prepareContext(account), since);
+  if (rows.length === 0) return 0;
+  await db
+    .insert(profileViews)
+    .values(rows.map((r) => ({ accountId: account.id, day: r.day, views: r.views })))
+    .onConflictDoUpdate({ target: [profileViews.accountId, profileViews.day], set: { views: sql`excluded.views`, updatedAt: new Date() } });
+  return rows.length;
+}
+
 /**
  * Full one-time backfill after connecting an account.
  * A failed post import is rethrown so the queue retries it, and historyImportedAt stays empty so
  * the next sync re-queues it; the reason is kept in historyError (lastError is per-sync).
- * Follower history is a bonus: its failure is recorded but doesn't block completion.
+ * Follower and view history are a bonus: their failure is recorded but doesn't block completion.
  */
 export async function backfillAccount(accountId: number): Promise<ImportResult> {
   const [account] = await db.select().from(accounts).where(eq(accounts.id, accountId));
@@ -140,12 +153,17 @@ export async function backfillAccount(accountId: number): Promise<ImportResult> 
     await db.update(accounts).set({ historyError: `post history: ${(e as Error).message}` }).where(eq(accounts.id, accountId));
     throw e;
   }
-  let historyError: string | null = null;
+  const errors: string[] = [];
   try {
     result.followerDays = await importFollowerHistory(account, 30);
   } catch (e) {
-    historyError = `follower history: ${(e as Error).message}`;
+    errors.push(`follower history: ${(e as Error).message}`);
   }
-  await db.update(accounts).set({ historyImportedAt: new Date(), historyError }).where(eq(accounts.id, accountId));
+  try {
+    result.viewDays = await importViewHistory(account, null);
+  } catch (e) {
+    errors.push(`view history: ${(e as Error).message}`);
+  }
+  await db.update(accounts).set({ historyImportedAt: new Date(), historyError: errors.join('\n') || null }).where(eq(accounts.id, accountId));
   return result;
 }

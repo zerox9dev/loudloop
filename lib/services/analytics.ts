@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import { startOfMonth } from 'date-fns';
-import { db, goals, insights, metricSnapshots, postTargets, type Account } from '@/lib/db';
+import { db, goals, insights, metricSnapshots, postTargets, profileViews, type Account } from '@/lib/db';
 import { dayKey, daysAgo, monthKey } from '@/lib/dates';
 import { computeGoal, type GoalProgress } from './goals';
 
@@ -149,6 +149,27 @@ export async function publishingStreak(accountId: number, now = new Date()) {
 }
 
 /** One series per platform; in the cross-project view same-platform accounts are summed. */
+/** Profile views per day per platform (summed across accounts); platforms without any data are left out. */
+export async function viewSeriesByPlatform(accs: { id: number; platform: Account['platform'] }[], days: string[]) {
+  if (accs.length === 0 || days.length === 0) return [];
+  const rows = await db
+    .select({ accountId: profileViews.accountId, day: profileViews.day, views: profileViews.views })
+    .from(profileViews)
+    .where(and(inArray(profileViews.accountId, accs.map((a) => a.id)), gte(profileViews.day, days[0])));
+  const platformOf = new Map(accs.map((a) => [a.id, a.platform]));
+  const index = new Map(days.map((d, i) => [d, i]));
+  const out = new Map<Account['platform'], (number | null)[]>();
+  for (const r of rows) {
+    const i = index.get(r.day);
+    const platform = platformOf.get(r.accountId);
+    if (i === undefined || !platform) continue;
+    const values = out.get(platform) ?? days.map(() => null);
+    values[i] = (values[i] ?? 0) + r.views;
+    out.set(platform, values);
+  }
+  return [...out].map(([platform, values]) => ({ platform, values }));
+}
+
 export function seriesByPlatform(accs: { id: number; platform: Account['platform'] }[], byAccount: Record<number, (number | null)[]>) {
   const out = new Map<Account['platform'], (number | null)[]>();
   for (const a of accs) {

@@ -2,10 +2,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { and, count, eq } from 'drizzle-orm';
-import { db, sql, accounts, comments, posts, postTargets, projects } from '@/lib/db';
+import { db, sql, accounts, comments, posts, postTargets, profileViews, projects } from '@/lib/db';
 import { encryptJson } from '@/lib/crypto';
-import { BACKFILL, backfillAccount, importPosts } from '@/lib/services/importer';
+import { BACKFILL, backfillAccount, importPosts, importViewHistory } from '@/lib/services/importer';
 import { instagramAdapter } from '@/lib/providers/instagram';
+import { threadsAdapter } from '@/lib/providers/threads';
 import type { Account } from '@/lib/db/schema';
 
 vi.mock('server-only', () => ({}));
@@ -57,6 +58,28 @@ describe('instagram history (unit)', () => {
     );
     const rows = await instagramAdapter.fetchFollowerHistory!(ctx, 30);
     expect(rows.map((r) => r.followers)).toEqual([97, 100]);
+  });
+});
+
+describe('threads view history (unit)', () => {
+  const ctx = { account: { id: 1, tokenExpiresAt: null } as Account, credentials: { accessToken: 't', userId: '42' }, saveCredentials: async () => {} };
+
+  it('walks 90-day windows back to the two-year limit and dates each value by the day it closes', async () => {
+    const windows: number[] = [];
+    server.use(
+      http.get('https://graph.threads.net/v1.0/42/threads_insights', ({ request }) => {
+        const until = Number(new URL(request.url).searchParams.get('until'));
+        windows.push(until - Number(new URL(request.url).searchParams.get('since')));
+        const end = new Date(until * 1000).toISOString().slice(0, 10);
+        return HttpResponse.json({ data: [{ name: 'views', values: [{ value: windows.length, end_time: `${end}T07:00:00+0000` }] }] });
+      }),
+    );
+    const rows = await threadsAdapter.fetchViewHistory!(ctx, null);
+    expect(windows).toHaveLength(9); // 729 days / 90
+    expect(Math.max(...windows)).toBeLessThanOrEqual(90 * 86400);
+    const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+    expect(rows.at(-1)).toEqual({ day: yesterday, views: 9 });
+    expect(rows.map((r) => r.day)).toEqual([...rows.map((r) => r.day)].sort());
   });
 });
 
@@ -135,6 +158,19 @@ describe.skipIf(!dbUp)('importPosts (integration)', () => {
     );
     const res = await importPosts(account, { days: 30, limit: 100, withComments: true });
     expect(res).toMatchObject({ created: 0, comments: 1 });
+  });
+
+  it('view history is upserted: a day still growing gets the later value', async () => {
+    const reply = (v: number) => HttpResponse.json({ data: [{ name: 'views', values: [{ value: 3, end_time: '2026-10-21T07:00:00+0000' }, { value: v, end_time: '2026-10-22T07:00:00+0000' }] }] });
+    server.use(http.get('https://graph.threads.net/v1.0/42/threads_insights', () => reply(5)));
+    await importViewHistory(account, new Date(Date.now() - 3 * 86400_000));
+    server.use(http.get('https://graph.threads.net/v1.0/42/threads_insights', () => reply(8)));
+    await importViewHistory(account, new Date(Date.now() - 3 * 86400_000));
+    const rows = await db.select({ day: profileViews.day, views: profileViews.views }).from(profileViews).where(eq(profileViews.accountId, account.id)).orderBy(profileViews.day);
+    expect(rows).toEqual([
+      { day: '2026-10-20', views: 3 },
+      { day: '2026-10-21', views: 8 },
+    ]);
   });
 
   it('a full backfill has no date cutoff and refreshes counters of known posts', async () => {

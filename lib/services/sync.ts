@@ -7,7 +7,7 @@ import { generateInsight } from './insights';
 import { ownerLocale } from './owner';
 import { translatorFor } from '@/lib/i18n/translator';
 import { summarizeAccount } from './analytics';
-import { importPosts, RECENT } from './importer';
+import { importPosts, importViewHistory, RECENT } from './importer';
 import { enqueueBackfill } from '@/lib/queue';
 
 /** Pull followers, post metrics and comments for one account. */
@@ -42,6 +42,12 @@ export async function syncAccount(account: Account) {
     if (account.historyImportedAt) await importPosts(account, { ...RECENT, withComments: false });
   } catch (e) {
     errors.push(`new posts: ${(e as Error).message}`);
+  }
+
+  try {
+    if (account.historyImportedAt) await importViewHistory(account, daysAgo(RECENT.days));
+  } catch (e) {
+    errors.push(`views: ${(e as Error).message}`);
   }
 
   const recent = await db

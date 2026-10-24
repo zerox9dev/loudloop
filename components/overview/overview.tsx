@@ -3,13 +3,14 @@ import { getFormat } from '@/lib/i18n/server';
 import { and, gte, lte } from 'drizzle-orm';
 import type { ChartSeries } from './followers-chart';
 import { db, challenges, type Platform } from '@/lib/db';
-import { followerSeries, historyDays, publishingStreak, seriesByPlatform, summarizeAccount } from '@/lib/services/analytics';
+import { followerSeries, historyDays, publishingStreak, seriesByPlatform, summarizeAccount, viewSeriesByPlatform } from '@/lib/services/analytics';
 import { inScope, listProjects, scopeAccounts, type Scope } from '@/lib/projects';
 import { ALL_TIME, isPlatform, RANGES } from '@/lib/platforms';
 import { dayKey } from '@/lib/dates';
 import { isActive } from '@/lib/providers';
 import { GoalCard } from './goal-card';
 import { FollowersChart } from './followers-chart';
+import { ViewsChart } from './views-chart';
 import { GoalsDialog } from './goals-dialog';
 
 
@@ -45,6 +46,7 @@ export async function OverviewBody({ scope, selected, range, readOnly = false }:
   const monthLabel = f.date(now, 'LLLL');
 
   const chartSeries: ChartSeries[] = seriesByPlatform(visible, series.byAccount);
+  const viewSeries = await viewSeriesByPlatform(visible, series.days);
 
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-6 p-4 md:p-8">
@@ -75,6 +77,7 @@ export async function OverviewBody({ scope, selected, range, readOnly = false }:
         days={series.days}
         series={chartSeries}
       />
+      {viewSeries.length > 0 && <ViewsChart range={days} days={series.days} series={viewSeries} />}
     </div>
   );
 }

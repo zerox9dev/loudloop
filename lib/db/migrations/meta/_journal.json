@@ -50,6 +50,13 @@
       "when": 1792858772677,
       "tag": "0006_locale_signal_params",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792866441415,
+      "tag": "0007_profile_views",
+      "breakpoints": true
     }
   ]
 }

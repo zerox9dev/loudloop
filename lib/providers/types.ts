@@ -59,6 +59,8 @@ export interface ProviderAdapter<C = Record<string, unknown>> {
   fetchPosts?(ctx: ProviderContext<C>, opts: FetchPostsOptions): Promise<RemotePost[]>;
   /** Daily follower totals for the past days, oldest first, when the platform keeps history. */
   fetchFollowerHistory?(ctx: ProviderContext<C>, days: number): Promise<{ day: string; followers: number }[]>;
+  /** Daily profile views from `since` (or as far back as the platform keeps), oldest first. */
+  fetchViewHistory?(ctx: ProviderContext<C>, since: Date | null): Promise<{ day: string; views: number }[]>;
   /** Refresh long-lived tokens if they expire soon. */
   refresh?(ctx: ProviderContext<C>): Promise<void>;
 }

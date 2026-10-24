@@ -82,6 +82,8 @@
     "total": "Total",
     "followers": "Followers",
     "dayByDay": "Day by day over {n, plural, one {# day} other {# days}}",
+    "views": "Profile views",
+    "viewsTotal": "{n} views over {days, plural, one {# day} other {# days}}",
     "mode": "Chart mode",
     "empty": "No data yet — connect a channel in Account"
   },

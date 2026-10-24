@@ -118,6 +118,21 @@ export const metricSnapshots = pgTable(
   (t) => [uniqueIndex('metric_snapshots_account_day').on(t.accountId, t.day)],
 );
 
+/** Daily profile views, for platforms that report them per day (Threads). */
+export const profileViews = pgTable(
+  'profile_views',
+  {
+    id: serial('id').primaryKey(),
+    accountId: integer('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    day: date('day').notNull(),
+    views: integer('views').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('profile_views_account_day').on(t.accountId, t.day)],
+);
+
 /** `s3` is set once the file is mirrored to the bucket; older uploads fall back to PUBLIC_MEDIA_URL. */
 export type MediaItem = { path: string; mime: string; width?: number; height?: number; s3?: boolean };
 
