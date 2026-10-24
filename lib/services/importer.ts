@@ -3,12 +3,14 @@ import { subDays } from 'date-fns';
 import { db, accounts, comments, metricSnapshots, posts, postTargets, profileViews, type Account } from '@/lib/db';
 import { getAdapter, isActive, prepareContext } from '@/lib/providers';
 import type { PostMetrics, RemotePost } from '@/lib/providers/types';
+import { saveRemote } from '@/lib/media';
+import type { MediaItem } from '@/lib/db/schema';
 
 /** First connect pulls everything the platform still lists; hourly syncs only look at the last few days. */
 export const BACKFILL = { days: null, limit: 1000 };
 export const RECENT = { days: 3, limit: 50 };
 
-export type ImportResult = { created: number; updated: number; comments: number; followerDays: number; viewDays?: number; skipped?: string };
+export type ImportResult = { created: number; updated: number; comments: number; followerDays: number; viewDays?: number; mediaFiles?: number; skipped?: string };
 
 /**
  * Bring posts that already exist on the platform into the app (published natively or before
@@ -79,6 +81,29 @@ export async function importPosts(account: Account, opts: { days: number | null;
     if (id) {
       targetByExternal.set(r.externalId, id);
       result.created++;
+    }
+  }
+
+  // CDN links expire, so files are copied now: for new posts, and on a full backfill also for
+  // posts imported before they had media
+  const withMedia = remote.filter((r) => r.mediaUrls?.length && (opts.days === null || !knownIds.has(r.externalId)));
+  const mediaTargets = withMedia.flatMap((r) => targetByExternal.get(r.externalId) ?? knownIds.get(r.externalId) ?? []);
+  if (mediaTargets.length) {
+    const stored = await db
+      .select({ externalId: postTargets.externalId, postId: posts.id, media: posts.media })
+      .from(postTargets)
+      .innerJoin(posts, eq(posts.id, postTargets.postId))
+      .where(inArray(postTargets.id, mediaTargets));
+    const urls = new Map(withMedia.map((r) => [r.externalId, r.mediaUrls!]));
+    for (const s of stored) {
+      if (s.media.length) continue;
+      const files: MediaItem[] = [];
+      for (const url of urls.get(s.externalId!) ?? []) {
+        const item = await saveRemote(url);
+        if (item) files.push(item);
+      }
+      if (files.length) await db.update(posts).set({ media: files }).where(eq(posts.id, s.postId));
+      result.mediaFiles = (result.mediaFiles ?? 0) + files.length;
     }
   }
 

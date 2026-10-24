@@ -8,6 +8,9 @@ import { BACKFILL, backfillAccount, importPosts, importViewHistory } from '@/lib
 import { instagramAdapter } from '@/lib/providers/instagram';
 import { threadsAdapter } from '@/lib/providers/threads';
 import type { Account } from '@/lib/db/schema';
+import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { mediaFile } from '@/lib/media';
 
 vi.mock('server-only', () => ({}));
 
@@ -183,5 +186,33 @@ describe.skipIf(!dbUp)('importPosts (integration)', () => {
     expect(res).toMatchObject({ created: 1, updated: 2 });
     const views = await db.select({ views: postTargets.views }).from(postTargets).where(eq(postTargets.accountId, account.id));
     expect(views.map((v) => v.views)).toEqual([500, 500, 500]);
+  });
+
+  it('copies post images from the CDN into storage, once', async () => {
+    const withImage = { data: threadsPage.data.map((t) => (t.id === 't2' ? { ...t, media_url: 'https://cdn.example/t2.jpg' } : t)) };
+    let downloads = 0;
+    server.use(
+      http.get('https://graph.threads.net/v1.0/42/threads', () => HttpResponse.json(withImage)),
+      http.get('https://graph.threads.net/v1.0/:id/insights', () => HttpResponse.json({ data: [] })),
+      http.get('https://cdn.example/t2.jpg', () => {
+        downloads++;
+        return new HttpResponse(new Uint8Array([0xff, 0xd8, 0xff]), { headers: { 'content-type': 'image/jpeg' } });
+      }),
+    );
+    const res = await importPosts(account, { ...BACKFILL, withComments: false });
+    expect(res.mediaFiles).toBe(1);
+    const [row] = await db
+      .select({ media: posts.media })
+      .from(postTargets)
+      .innerJoin(posts, eq(posts.id, postTargets.postId))
+      .where(and(eq(postTargets.accountId, account.id), eq(postTargets.externalId, 't2')));
+    expect(row.media).toHaveLength(1);
+    expect(row.media[0]).toMatchObject({ mime: 'image/jpeg' });
+    expect(existsSync(mediaFile(row.media[0].path))).toBe(true);
+    await rm(mediaFile(row.media[0].path));
+
+    // already has media: not downloaded again
+    await importPosts(account, { ...BACKFILL, withComments: false });
+    expect(downloads).toBe(1);
   });
 });

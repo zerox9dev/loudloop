@@ -129,10 +129,11 @@ export const threadsAdapter: ProviderAdapter<ThreadsCredentials> = {
   },
 
   async fetchPosts(ctx, { since, limit }) {
-    type Item = { id: string; text?: string; media_type: string; permalink?: string; timestamp: string };
+    type Media = { media_type: string; media_url?: string };
+    type Item = Media & { id: string; text?: string; permalink?: string; timestamp: string; children?: { data: Media[] } };
     const out: RemotePost[] = [];
     let url: string | undefined = `${GRAPH}/${ctx.credentials.userId}/threads?${qs({
-      fields: 'id,text,media_type,permalink,timestamp',
+      fields: 'id,text,media_type,media_url,permalink,timestamp,children{media_type,media_url}',
       limit: 50,
       access_token: ctx.credentials.accessToken,
     })}`;
@@ -143,7 +144,7 @@ export const threadsAdapter: ProviderAdapter<ThreadsCredentials> = {
         if (since && publishedAt < since) return out;
         if (t.media_type === 'REPOST_FACADE') continue; // reposts of other people's threads
         const kind: PostKind = t.media_type === 'VIDEO' ? 'reel' : t.media_type === 'IMAGE' || t.media_type === 'CAROUSEL_ALBUM' ? 'photo' : 'post';
-        out.push({ externalId: t.id, url: t.permalink, text: t.text ?? '', kind, publishedAt });
+        out.push({ externalId: t.id, url: t.permalink, text: t.text ?? '', kind, publishedAt, mediaUrls: (t.children?.data ?? [t]).flatMap((m) => m.media_url ?? []) });
         if (out.length >= limit) break;
       }
       url = page.paging?.next;

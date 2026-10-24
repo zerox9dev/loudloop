@@ -25,6 +25,8 @@ export type RemotePost = {
   kind: PostKind;
   publishedAt: Date;
   metrics?: PostMetrics;
+  /** Platform CDN links; they expire, so the importer copies the files into our storage. */
+  mediaUrls?: string[];
 };
 
 export type FetchPostsOptions = { since?: Date; limit: number };
