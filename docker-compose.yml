@@ -1,0 +1,118 @@
+name: loudloop
+
+x-app: &app
+  build: .
+  image: loudloop:local
+  env_file: .env
+  environment:
+    DATABASE_URL: postgres://socialboard:socialboard@postgres:5432/socialboard
+    REDIS_URL: redis://redis:6379
+    MEDIA_DIR: /data/media
+    S3_ENDPOINT: http://s3:8333
+  volumes:
+    - media:/data/media
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    s3:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: socialboard
+      POSTGRES_PASSWORD: socialboard
+      POSTGRES_DB: socialboard
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U socialboard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Self-hosted S3 (SeaweedFS, Apache-2.0). Post media is mirrored here; the bucket is
+  # anonymously readable so Instagram/Threads can fetch files by URL. Only this port
+  # needs to be reachable from the internet, not the panel.
+  s3:
+    image: chrislusf/seaweedfs:4.47
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/s3.json <<JSON
+        {"identities":[
+          {"name":"anonymous","actions":["Read:$${S3_BUCKET}"]},
+          {"name":"app","credentials":[{"accessKey":"$${S3_ACCESS_KEY_ID}","secretKey":"$${S3_SECRET_ACCESS_KEY}"}],
+           "actions":["Admin","Read","List","Write","Tagging"]}
+        ]}
+        JSON
+        exec weed server -dir=/data -ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -volume.max=0 -s3 -s3.port=8333 -s3.config=/tmp/s3.json
+    ports:
+      - "8333:8333"
+    volumes:
+      - s3data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9333/cluster/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  web:
+    <<: *app
+    command: ["sh", "-c", "node dist/migrate.js && node dist/seed.js --if-empty && node_modules/.bin/next start"]
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  worker:
+    <<: *app
+    command: ["node", "dist/worker.js"]
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+# explicit names: data survives the rename from the project's working title
+volumes:
+  pgdata:
+    name: socialboard_pgdata
+  redisdata:
+    name: socialboard_redisdata
+  s3data:
+    name: socialboard_s3data
+  media:
+    name: socialboard_media
